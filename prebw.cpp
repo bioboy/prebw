@@ -19,9 +19,9 @@
 
 const char* GLFTPD_LOG      = "/glftpd/ftp-data/logs/glftpd.log";
 const char* XFER_LOG        = "/glftpd/ftp-data/logs/xferlog";
+key_t       IPC_KEY         = 0xDEADBABE;
 const int   SNAPSHOTS[]     = { 1, 5, 10, 15, 20, 25, 30 }; // seconds
 const long  REFRESH_RATE    = 50000; // microseconds
-const char* IPC_KEY         = "0xDEADBABE";
 const int   CUT_OFF         = 60; // seconds
 
 struct Traffic
@@ -59,36 +59,31 @@ bool isInDirectory(const char* dir, const char* subdir)
     return *(subdir + dirLen) == '/' || *(subdir + dirLen) == '\0';
 }
 
-bool collectBandwidth(
-        const std::string& dirname,
-        key_t ipcKey,
-        Bandwidth* result
-    )
+bool collectBandwidth(const std::string& dirname, Bandwidth* result)
 {
-    long long shmid = shmget(ipcKey, 0, 0);
+    int shmid = shmget(IPC_KEY, 0, 0);
     if (shmid < 0) {
         if (errno == ENOENT) {
-            std::cout << "no users online\n";
             return result != NULL;
         }
-        std::cout << "shmget: " << strerror(errno) << "\n";
+        std::cerr << "shmget: " << strerror(errno) << "\n";
         return false;
     }
 
     ONLINE* online = (ONLINE*) shmat(shmid, NULL, SHM_RDONLY);
     if (online == (ONLINE*) -1) {
-        std::cout << "shmat: " << strerror(errno) << "\n";
+        std::cerr << "shmat: " << strerror(errno) << "\n";
         return false;
     }
 
     struct shmid_ds	stat;
     if (shmctl(shmid, IPC_STAT, &stat) < 0) {
-        std::cout << "shmctl: " << strerror(errno) << "\n";
+        std::cerr << "shmctl: " << strerror(errno) << "\n";
         shmdt(online);
         return false;
     }
 
-    if (result) {
+    if (result != NULL) {
         result->speed = 0;
         result->userCount = 0;
     }
@@ -105,21 +100,18 @@ bool collectBandwidth(
         }
 
         if (strncasecmp(online[i].status, "RETR ", 5) != 0) {
-            std::cout << "skipping, not downloading: " << online[i].status << "\n";
             continue;
         }
 
         if (online[i].bytes_xfer <= 100 * 1024) {
-            std::cout << "skipping, not enough bytes: " << online[i].bytes_xfer << "\n";
             continue;
         }
 
         if (!isInDirectory(dirname.c_str(), online[i].currentdir)) {
-            std::cout << "skipping, not in directory: " << online[i].currentdir << "\n";
             continue;
         }
 
-        if (result) {
+        if (result != NULL) {
             double duration = (now.tv_sec - online[i].tstart.tv_sec) +
                               ((now.tv_usec - online[i].tstart.tv_usec) / 1000000.0);
             result->speed += (duration == 0 ? online[i].bytes_xfer
@@ -132,22 +124,19 @@ bool collectBandwidth(
 
     shmdt(online);
 
-    return result || numDownloaders > 0;
+    return result != NULL || numDownloaders > 0;
 }
 
-bool collectBandwidthSnapshot(
-        const std::string& dirname,
-        key_t ipcKey,
-        std::time_t snapshotTime,
-        Bandwidth& result
-    )
+bool collectBandwidthSnapshot(const std::string& dirname,
+                              std::time_t snapshotTime,
+                              Bandwidth& result)
 {
     result.speed = 0;
     result.userCount = 0;
 
     while (true) {
         Bandwidth bandwidth;
-        if (!collectBandwidth(dirname, ipcKey, &bandwidth)) {
+        if (!collectBandwidth(dirname, &bandwidth)) {
             return false;
         }
 
@@ -164,34 +153,26 @@ bool collectBandwidthSnapshot(
     return true;
 }
 
-std::vector<Bandwidth> collectBandwidthSnapshots(
-        const std::string& dirname,
-        key_t ipcKey,
-        std::time_t startTime
-    )
+bool collectBandwidthSnapshots(const std::string& dirname,
+                               std::time_t startTime,
+                               std::vector<Bandwidth>& result)
 {
-    std::vector<Bandwidth> bandwidths;
     for (std::size_t i = 0; i < NUM_SNAPSHOTS; ++i) {
         Bandwidth bandwidth;
-        if (!collectBandwidthSnapshot(dirname, ipcKey, startTime + SNAPSHOTS[i], bandwidth)) {
-            return std::vector<Bandwidth>();
+        if (!collectBandwidthSnapshot(dirname, startTime + SNAPSHOTS[i], bandwidth)) {
+            return false;
         }
-        bandwidths.push_back(bandwidth);
+        result.push_back(bandwidth);
     }
-    return bandwidths;
+    return true;
 }
 
-void waitNoTransfersOrCutOff(
-        const std::string& dirname,
-        key_t ipcKey,
-        std::time_t cutOffTime
-    )
+void waitNoTransfersOrCutOff(const std::string& dirname, std::time_t cutOffTime)
 {
     int consecutive = 0;
     while (std::time(NULL) < cutOffTime) {
-        if (!collectBandwidth(dirname, ipcKey, NULL)) {
+        if (!collectBandwidth(dirname, NULL)) {
             if (++consecutive == 3) {
-                std::cout << "no active transfers\n";
                 return;
             }
         }
@@ -200,8 +181,6 @@ void waitNoTransfersOrCutOff(
         }
         sleep(1);
     }
-
-    std::cout << "transfers still active, cut off reached\n";
 }
 
 bool collectTrafficStats(const std::string& dirname, Traffic& traffic)
@@ -255,11 +234,9 @@ std::string formatTimestamp()
     return timestamp;
 }
 
-bool log(
-        const std::string& dirname,
-        const std::vector<Bandwidth>& bandwidths,
-        const Traffic& traffic
-    )
+bool log(const std::string& dirname,
+         const std::vector<Bandwidth>& bandwidths,
+         const Traffic& traffic)
 {
     std::ofstream f(GLFTPD_LOG, std::ios_base::app);
     if (!f) {
@@ -284,34 +261,33 @@ int main(int argc, char** argv)
 {
     if (!isDebug()) {
         std::cout.setstate(std::ios::failbit);
-        std::cout.setstate(std::ios::failbit);
+        std::cerr.setstate(std::ios::failbit);
     }
 
     if (argc != 2) {
-        std::cout << "usage: " << argv[0] << " <dirname>\n";
+        std::cerr << "usage: " << argv[0] << " <dirname>\n";
         return 1;
     }
 
     const std::string dirname   = argv[1];
-    const key_t ipcKey          = std::strtoll(IPC_KEY, NULL, 16);
     const std::time_t startTime = std::time(NULL);
 
-    std::vector<Bandwidth> bandwidths = collectBandwidthSnapshots(dirname, ipcKey, startTime);
-    if (bandwidths.size() != NUM_SNAPSHOTS) {
-        std::cout << "bandwidth snapshot collection failed\n";
+    std::vector<Bandwidth> bandwidths;
+    if (!collectBandwidthSnapshots(dirname, startTime, bandwidths)) {
+        std::cerr << "bandwidth snapshot collection failed\n";
         return 1;
     }
 
-    waitNoTransfersOrCutOff(dirname, ipcKey, startTime + CUT_OFF);
+    waitNoTransfersOrCutOff(dirname, startTime + CUT_OFF);
 
     Traffic traffic;
     if (!collectTrafficStats(dirname, traffic)) {
-        std::cout << "traffic collection failed\n";
+        std::cerr << "traffic collection failed\n";
         return 1;
     }
 
     if (!log(dirname, bandwidths, traffic)) {
-        std::cout << "error while writing to glftpd.log\n";
+        std::cerr << "error while writing to glftpd.log\n";
         return 1;
     }
 }
