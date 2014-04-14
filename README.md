@@ -1,6 +1,3 @@
-prebw
-=====
-
 glFTPd PreBW by biohazard
 =========================
 
