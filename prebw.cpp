@@ -38,13 +38,7 @@
 #include <sys/shm.h>
 #include <sys/time.h>
 #include "glconf.h"
-
-const char* GLFTPD_LOG      = "/glftpd/ftp-data/logs/glftpd.log";
-const char* XFER_LOG        = "/glftpd/ftp-data/logs/xferlog";
-key_t       IPC_KEY         = 0xDEADBABE;
-const int   SNAPSHOTS[]     = { 1, 5, 10, 15, 20, 25, 30 }; // seconds
-const long  REFRESH_RATE    = 50000; // microseconds
-const int   CUT_OFF         = 60; // seconds
+#include "config.hpp"
 
 struct Traffic
 {

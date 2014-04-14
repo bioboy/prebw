@@ -7,7 +7,6 @@ all:
 
 install:
 	install -m755 prebw $(GLFTPD_PATH)/bin
-	install -m755 prebw.sh $(GLFTPD_PATH)/bin
 
 clean:
 	rm -f prebw
