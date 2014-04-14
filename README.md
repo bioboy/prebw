@@ -7,8 +7,8 @@ Installation steps:
 2. Edit settings in config.hpp
 3. Run 'make' to build prebw utility
 4. Run 'make install' as root to copy binaries to glftpd's bin directory
-5. Copy prebw.tcl to <NGBOT-PATH>/plugins directory
-6. Add source <NGBOT-PATH>/plugins/prebw.tcl to bottom of eggdrop conf
+5. Copy prebw.tcl to (NGBOT-PATH)/plugins directory
+6. Add source (NGBOT-PATH)/plugins/prebw.tcl to bottom of eggdrop conf
 7. Edit ngBot.conf, ngBot.vars and your ngBot theme accordingly. See editing ngBot theme.
 7. Rehash eggdrop
 
