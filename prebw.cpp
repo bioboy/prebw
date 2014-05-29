@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// PreBW v0.1 Copyright (c) 2014 Biohazard
+// PreBW v0.2 Copyright (c) 2014 Biohazard
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -40,6 +40,12 @@
 #include "glconf.h"
 #include "config.hpp"
 
+
+std::string dataPath = "/ftp-data";
+std::string glftpdLog;
+std::string xferLog;
+key_t ipcKey = 0x0000DEAD;
+
 struct Traffic
 {
     double size;
@@ -65,6 +71,51 @@ bool isDebug()
 
 const std::size_t NUM_SNAPSHOTS = sizeof(SNAPSHOTS) / sizeof(SNAPSHOTS[0]);
 
+bool parseGlftpdConf(std::string line, const char* option, std::string& value)
+{
+    while (!line.empty() && std::isspace(line[line.size() - 1])) {
+        line.erase(line.size() - 1);
+    }
+
+    std::size_t optionLen = std::strlen(option);
+    if (line.size() > optionLen + 2 &&
+        line.compare(0, optionLen, option) == 0 &&
+        std::isspace(line[optionLen])) {
+
+        std::size_t i = optionLen;
+        while (std::isspace(line[i])) {
+            ++i;
+        }
+
+        value.assign(line, i, std::string::npos);
+        return !value.empty();
+    }
+    return false;
+}
+
+bool loadGlftpdConf()
+{
+    std::ifstream f(GLFTPD_CONF);
+    if (!f) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(f, line)) {
+        std::string ipcKeyString;
+        if (parseGlftpdConf(line, "ipc_key", ipcKeyString)) {
+            ipcKey = strtoul(ipcKeyString.c_str(), NULL, 16);
+        }
+        else if (parseGlftpdConf(line, "datapath", dataPath)) {
+            // nothing
+        }
+    }
+
+    glftpdLog = GLFTPD_ROOT + dataPath + "/logs/glftpd.log";
+    xferLog = GLFTPD_ROOT + dataPath + "/logs/xferlog";
+    return true;
+}
+
 bool isInDirectory(const char* dir, const char* subdir)
 {
     std::size_t dirLen = std::strlen(dir);
@@ -77,7 +128,7 @@ bool isInDirectory(const char* dir, const char* subdir)
 
 bool collectBandwidth(const std::string& dirname, Bandwidth* result)
 {
-    int shmid = shmget(IPC_KEY, 0, 0);
+    int shmid = shmget(ipcKey, 0, 0);
     if (shmid < 0) {
         if (errno == ENOENT) {
             return result != NULL;
@@ -201,7 +252,7 @@ void waitNoTransfersOrCutOff(const std::string& dirname, std::time_t cutOffTime)
 
 bool collectTrafficStats(const std::string& dirname, Traffic& traffic)
 {
-    std::ifstream f(XFER_LOG);
+    std::ifstream f(xferLog.c_str());
     if (!f) {
         return false;
     }
@@ -254,7 +305,7 @@ bool log(const std::string& dirname,
          const std::vector<Bandwidth>& bandwidths,
          const Traffic& traffic)
 {
-    std::ofstream f(GLFTPD_LOG, std::ios_base::app);
+    std::ofstream f(glftpdLog.c_str(), std::ios_base::app);
     if (!f) {
         return false;
     }
@@ -287,6 +338,11 @@ int main(int argc, char** argv)
 
     const std::string dirname   = argv[1];
     const std::time_t startTime = std::time(NULL);
+
+    if (!loadGlftpdConf()) {
+        std::cerr << "loading of glftpd conf failed\n";
+        return 1;
+    }
 
     std::vector<Bandwidth> bandwidths;
     if (!collectBandwidthSnapshots(dirname, startTime, bandwidths)) {

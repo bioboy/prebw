@@ -1,0 +1,11 @@
+Changelog for PreBW by biohazard
+================================
+
+0.2:
+    1. prebw.tcl should now work with any pre script that logs
+       the full path of the pre in its log entry.
+    2. simplified config.hpp by replacing IPC_KEY, XFER_LOG and GLFTPD_LOG with
+       GLFTPD_CONF and GLFTPD_ROOT. these settings are now detected using glftpd.conf.
+
+0.1:
+    1. initial release
