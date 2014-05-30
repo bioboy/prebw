@@ -61,6 +61,7 @@ namespace eval ::ngBot::plugin::prebw {
     }
 
     proc grep_gl_conf {option {default ""}} {
+        variable np
         variable ${np}::location
         set value $default
         if {![catch {set fh [open $location(GLCONF) r]} error]} {
